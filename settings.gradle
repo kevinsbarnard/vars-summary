@@ -1,0 +1,3 @@
+rootProject.name = 'vars-summary'
+include 'main'
+
