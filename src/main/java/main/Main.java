@@ -107,8 +107,8 @@ public class Main {
                     String.format(
                             "%1$-30s%2$10d%3$10d",
                             "Total: ",
-                            sumTotalAnnotations,
-                            sumTotalQualityAnnotations
+                            sumTotalQualityAnnotations,
+                            sumTotalAnnotations
                     )
             );
 
