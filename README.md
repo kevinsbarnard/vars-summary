@@ -8,6 +8,17 @@ cd build/libs
 java -jar vars-summary-1.0-all.jar path/to/concepts.txt
 ```
 
+## Concepts text file
+A proper concept list is simply a .txt file with one genus per line. Example:
+```
+Apolemia
+Gonatus
+Bathochordaeus
+Solmissus
+Nanomia
+Aegina
+```
+
 # Build
 To build the vars-summary, you must have the latest version of [Gradle](https://gradle.org/). Run the following from the project directory:
 ```bash
