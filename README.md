@@ -6,14 +6,14 @@ To run vars-summary from the command line, run the following from the project di
 
 ```bash
 cd build/libs
-java -jar vars-summary-1.0-all.jar path/to/concepts.txt
+java -jar vars-summary-1.0-all.jar path/to/genera.txt
 ```
 
 ### Options
 To specify the output file, use the option `-o`, followed by the path to the output file. Example:
 
 ```bash
-java -jar vars-summary-1.0-all.jar -o /usr/home/results.csv
+java -jar vars-summary-1.0-all.jar -o /usr/home/results.csv /usr/home/genera.txt
 ```
 
 To use the MBARI kb server to fetch a list of all genera, use the option `-kb`. Example:
