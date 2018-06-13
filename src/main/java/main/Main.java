@@ -11,23 +11,13 @@ import java.util.ArrayList;
 
 public class Main {
 
-    private static final String
-            ANNOTATIONS_BASE_STATEMENT =
-                    "SELECT DISTINCT ConceptName, Image " +
-                    "FROM Annotations " +
-                    "WHERE Image IS NOT NULL AND (" +
-                            "ConceptName = '' OR " +
-                            "ConceptName LIKE ' %') " +
-                    "ORDER BY ConceptName ASC",
-            QUALITYIMAGEANNOTATIONS_BASE_STATEMENT =
-                    "SELECT DISTINCT ConceptName, ImageReference " +
-                    "FROM QualityImageAnnotations " +
-                    "WHERE ImageReference IS NOT NULL AND (" +
-                            "ConceptName = '' OR " +
-                            "ConceptName LIKE ' %') " +
-                    "ORDER BY ConceptName ASC";
+    private static final String[] DEFAULT_PARAMS = {
+            "false", // Use kb
+            System.getProperty("user.home") + "/genera.txt", // Input file path
+            System.getProperty("user.home") + "/counts.csv" // Output file path
+    };
 
-    private static final int NUM_QUERIES = 2;
+    private static final int NUM_QUERIES = 3;
 
     public static void main(String[] args) {
 
@@ -40,85 +30,58 @@ public class Main {
         }
 
         // Parse command-line arguments
-        File conceptList = parseArgs(args);
+        String[] params = parseArgs(args);
 
-        if (conceptList == null) {
+        if (params == null) {
             System.out.println("\n--- Process failed. ---");
             return;
         }
 
         // Read list of concepts
-        ArrayList<String> concepts =
-                readList(conceptList);
-                // getAllAtLevel("genus");
+        ArrayList<String> concepts;
+        if (!Boolean.parseBoolean(params[0])) concepts = readList(getFile(params[1])); // Use path specified
+        else concepts = getAllGenera(); // Use kb server
 
         // Run SQL queries on VARS database
         assert concepts != null;
-        ArrayList<ResultSet> results = runQueries(concepts);
+        String[] statements = {
+                Query.readFromStream(ClassLoader.getSystemClassLoader().getResourceAsStream("AnnotationsQuery.sql")),
+                Query.readFromStream(ClassLoader.getSystemClassLoader().getResourceAsStream("QualityImageAnnotationsQuery.sql")),
+                Query.readFromStream(ClassLoader.getSystemClassLoader().getResourceAsStream("TotalAnnotationsQuery.sql"))
+        };
+        ArrayList<ResultSet> results = runQueries(concepts, statements);
 
-        // Calculate, display, and write results
-        displayResults(results, concepts, new File(conceptList.getParent() + "\\counts.csv"));
+        // Calculate and display results
+        String[] resultLines = getResults(results, concepts);
+
+        // Write results
+        writeResults(resultLines, params[2]);
 
         System.out.println("\n--- Process completed successfully. ---");
 
     }
 
-    private static void displayResults(ArrayList<ResultSet> results, ArrayList<String> concepts, File write) {
+    private static void writeResults(String[] results, String path) {
 
+        File writeFile = new File(path);
+
+        // Initialize writer
         BufferedWriter writer;
         try {
-            writer = new BufferedWriter(new FileWriter(write));
+            writer = new BufferedWriter(new FileWriter(writeFile));
         } catch (IOException e) {
             e.printStackTrace();
             return;
         }
 
-        System.out.println();
-
-        for (int i = 0; i < results.size(); i += NUM_QUERIES) {
-
-            // Grab ResultSets
-            ResultSet annotationsResult = results.get(i);
-            ResultSet qualityAnnotationsResult = results.get(i + 1);
-
-            String concept = concepts.get(i / NUM_QUERIES);
-
-            System.out.println("Counting images for concept " + concept + ":");
-
-            // Count distinct
-            int qualityImageCount = 0, totalImageCount = 0;
-            try {
-                while (annotationsResult.next()) totalImageCount++;
-                while (qualityAnnotationsResult.next()) qualityImageCount++;
-            } catch (SQLException e) {
-                e.printStackTrace();
-            }
-
-            System.out.println(
-                    String.format(
-                            "%1$-10s%2$10d",
-                            "Quality:",
-                            qualityImageCount
-                    )
-            );
-            System.out.println(
-                    String.format(
-                            "%1$-10s%2$10d",
-                            "Total",
-                            totalImageCount
-                    )
-            );
-
-            System.out.println();
-
+        for (String resultLine : results) {
             // Write results to CSV
             try {
-                writer.write(concept + "," + qualityImageCount + "," + totalImageCount);
+                writer.write(resultLine);
                 writer.newLine();
             } catch (IOException e) {
                 e.printStackTrace();
             }
-
         }
 
         // Close writer
@@ -130,17 +93,85 @@ public class Main {
 
     }
 
-    private static File parseArgs(String[] args) {
+    private static String[] getResults(ArrayList<ResultSet> results, ArrayList<String> concepts) {
 
-        String path;
+        String[] resultLines = new String[concepts.size()];
+
+        System.out.println();
+
+        for (int i = 0; i < results.size(); i += NUM_QUERIES) {
+
+            // Grab ResultSets
+            ResultSet annotationsResult = results.get(i);
+            ResultSet qualityAnnotationsResult = results.get(i + 1);
+            ResultSet observationsResult = results.get(i + 2);
+
+            String concept = concepts.get(i / NUM_QUERIES);
+
+            System.out.println("Counting for concept " + concept + ":");
+
+            // Count
+            int observationCount = 0, qualityImageCount = 0, totalImageCount = 0;
+            try {
+                while (annotationsResult.next()) totalImageCount++;
+                while (qualityAnnotationsResult.next()) qualityImageCount++;
+                while (observationsResult.next()) observationCount++;
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+
+            System.out.println(
+                    String.format(
+                            "%1$-15s%2$10d",
+                            "Observations:",
+                            observationCount
+                    )
+            );
+            System.out.println(
+                    String.format(
+                            "%1$-15s%2$10d",
+                            "Quality:",
+                            qualityImageCount
+                    )
+            );
+            System.out.println(
+                    String.format(
+                            "%1$-15s%2$10d",
+                            "Total:",
+                            totalImageCount
+                    )
+            );
+
+            System.out.println();
+
+            resultLines[i / NUM_QUERIES] = concept + "," + observationCount + "," + qualityImageCount + "," + totalImageCount;
+
+        }
+
+        return resultLines;
+
+    }
+
+    private static String[] parseArgs(String[] args) {
+
+        String[] params = DEFAULT_PARAMS;
 
         // Verify usage
         try {
-            path = args[0];
-        } catch (IndexOutOfBoundsException e) {
-            System.out.println("Incorrect usage. Follow:\n\tjava -jar vars-summary-1.0.jar path/to/concept_list.txt");
+            for (int i = 0; i < args.length; i++) {
+                if (args[i].equals("-kb")) params[0] = "true";
+                else if (args[i].equals("-o")) params[2] = args[i + 1];
+            }
+            params[1] = args[args.length - 1]; // Set input file path to last argument
+            return params;
+        } catch (Exception e) {
+            System.out.println("Incorrect usage. Follow:\n\tjava -jar vars-summary-1.0-all.jar [OPTIONS] path/to/genera.txt");
             return null;
         }
+
+    }
+
+    private static File getFile(String path) {
 
         File conceptList = new File(path);
 
@@ -160,7 +191,7 @@ public class Main {
 
             BufferedReader reader = new BufferedReader(new FileReader(conceptList));
 
-            ArrayList<String> concepts = new ArrayList<String>();
+            ArrayList<String> concepts = new ArrayList<>();
 
             String concept;
             while ((concept = reader.readLine()) != null) concepts.add(concept);
@@ -174,9 +205,9 @@ public class Main {
 
     }
 
-    private static ArrayList<ResultSet> runQueries(ArrayList<String> concepts) {
+    private static ArrayList<ResultSet> runQueries(ArrayList<String> concepts, String[] statements) {
 
-        ArrayList<ResultSet> resultSets = new ArrayList<ResultSet>();
+        ArrayList<ResultSet> resultSets = new ArrayList<>();
 
         Query mainQuery = new Query();
 
@@ -184,19 +215,8 @@ public class Main {
 
             System.out.println("Querying " + concept);
 
-            // Add concept names to query
-            String annotationsStatement = insertAt(ANNOTATIONS_BASE_STATEMENT, concept, ANNOTATIONS_BASE_STATEMENT.indexOf('\'') + 1);
-            annotationsStatement = insertAt(annotationsStatement, concept, annotationsStatement.indexOf('%') - 1);
-            String qualityImageAnnotationsStatement = insertAt(QUALITYIMAGEANNOTATIONS_BASE_STATEMENT, concept, QUALITYIMAGEANNOTATIONS_BASE_STATEMENT.indexOf('\'') + 1);
-            qualityImageAnnotationsStatement = insertAt(qualityImageAnnotationsStatement, concept, qualityImageAnnotationsStatement.indexOf('%') - 1);
-
-            String[] statements = {
-                    annotationsStatement,
-                    qualityImageAnnotationsStatement
-            };
-
             for (String statement : statements) {
-                mainQuery.setStatement(statement);
+                mainQuery.setStatement(insertConcept(statement, concept));
                 resultSets.add(mainQuery.executeStatement());
             }
 
@@ -209,12 +229,29 @@ public class Main {
         return (new StringBuilder(str).insert(index, insert)).toString();
     }
 
-    private static ArrayList<String> getAllAtLevel(String level) {
+    private static String insertConcept(String str, String concept) {
+        String first = insertAt(
+                str,
+                concept,
+                str.indexOf('\'') + 1
+        );
+        return insertAt(
+                first,
+                concept,
+                first.indexOf('%') - 1
+        );
+    }
+
+    private static ArrayList<String> getAllGenera() {
+
+        System.out.println("Getting genera from MBARI kb server...");
+
+        String rank = "genus";
 
         Query getAll = new Query("SELECT ConceptName FROM Annotations WHERE Image IS NOT NULL GROUP BY ConceptName ORDER BY ConceptName ASC");
         ResultSet result = getAll.executeStatement();
 
-        ArrayList<String> conceptList = new ArrayList<String>();
+        ArrayList<String> conceptList = new ArrayList<>();
 
         // Build concept list
         try {
@@ -226,15 +263,17 @@ public class Main {
             e.printStackTrace();
         }
 
-        ArrayList<String> levelList = new ArrayList<String>();
+        ArrayList<String> rankList = new ArrayList<>();
 
-        // Build level list
+        // Build rank list
         for (String concept : conceptList) {
 
             String link = "http://m3.shore.mbari.org/kb/v1/phylogeny/down/" + concept;
 
             // Fix links with spaces
             while (link.contains(" ")) link = link.replace(" ", "%20");
+
+            System.out.println("Checking if " + concept + " at rank '" + rank + "'");
 
             boolean isAtLevel = false;
 
@@ -249,26 +288,26 @@ public class Main {
 
                 // Read lines to ArrayList
                 BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
-                String json = "";
+                StringBuilder json = new StringBuilder();
                 String line;
-                while ((line = reader.readLine()) != null) json += line;
+                while ((line = reader.readLine()) != null) json.append(line);
 
-                // Check if at level
+                // Check if at rank
                 int rankIndex = json.indexOf("rank") + 8;
-                if (json.substring(rankIndex, rankIndex + level.length()).equals(level)) isAtLevel = true;
+                if (json.toString().substring(rankIndex, rankIndex + rank.length()).equals(rank)) isAtLevel = true;
 
             } catch (IOException e) {
                 System.out.println("Error: Could not retrieve " + link + ", removing concept \"" + concept + "\" from results.");
                 isAtLevel = false;
             }
 
-            // Add if at desired level
+            // Add if at desired rank
             if (isAtLevel) {
-                levelList.add(concept);
+                rankList.add(concept);
             }
         }
 
-        return levelList;
+        return rankList;
 
     }
 

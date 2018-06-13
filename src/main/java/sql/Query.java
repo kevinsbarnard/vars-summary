@@ -1,5 +1,6 @@
 package sql;
 
+import java.io.*;
 import java.sql.*;
 
 /**
@@ -54,6 +55,30 @@ public class Query {
             return conn.prepareStatement(sql);
         } catch (SQLException e) {
             System.err.println("Error preparing statement. Check SQL:\n\t" + sql);
+            e.printStackTrace();
+            return null;
+        }
+
+    }
+
+    /**
+     * Read an SQL statement in from an input stream.
+     *
+     * @param stream Stream to read from
+     * @return SQL statement String.
+     */
+    public static String readFromStream(InputStream stream) {
+
+        try {
+            BufferedReader reader = new BufferedReader(new InputStreamReader(stream));
+
+            StringBuilder statement = new StringBuilder();
+
+            String line;
+            while ((line = reader.readLine()) != null) statement.append(line.trim()).append(" ");
+
+            return statement.toString();
+        } catch (java.io.IOException e) {
             e.printStackTrace();
             return null;
         }
